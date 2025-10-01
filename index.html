@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神奇七巧板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- 配置Tailwind自定义颜色 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                        dark: '#1F2937',
+                        light: '#F3F4F6'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .image-container {
+                @apply relative w-full flex items-center justify-center overflow-hidden bg-dark transition-all duration-500 ease-in-out;
+                height: 68vh;
+            }
+            .fullscreen-image {
+                @apply max-w-full max-h-full object-contain transition-all duration-700 ease-in-out transform scale-95 opacity-0;
+            }
+            .fullscreen-image.active {
+                @apply scale-100 opacity-100;
+            }
+            .timer-display {
+                @apply absolute top-6 right-6 bg-dark/70 text-white px-4 py-2 rounded-lg text-2xl font-bold backdrop-blur-sm transition-all duration-300;
+            }
+            .result-display {
+                @apply absolute top-6 left-6 bg-dark/80 text-white px-6 py-3 rounded-xl text-xl font-bold backdrop-blur-md opacity-0 transition-all duration-500;
+            }
+            .result-display.active {
+                @apply opacity-100;
+            }
+            .images-grid {
+                @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-4 p-4 w-full max-w-7xl mx-auto;
+                height: 22vh;
+            }
+            .grid-image {
+                @apply w-full aspect-video object-cover rounded-lg shadow-md cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.02];
+            }
+        }
+    </style>
+</head>
+<body class="bg-light font-sans text-dark">
+    <div class="min-h-screen flex flex-col">
+        <!-- 顶部导航 -->
+        <header class="bg-white shadow-sm py-4 px-6 sticky top-0 z-50">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-primary">
+                    <i class="fa fa-picture-o mr-2"></i>神奇七巧板
+                </h1>
+                <button id="controlBtn" class="bg-primary hover:bg-primary/90 text-white font-bold py-3 px-8 rounded-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary/50">
+                    <i class="fa fa-play mr-2"></i>开始
+                </button>
+            </div>
+        </header>
+        
+        <!-- 主内容区 -->
+        <main class="flex-grow">
+            <!-- 图片网格（初始状态） -->
+            <div id="imagesGrid" class="images-grid">
+                <!-- 图片将通过JS动态插入 -->
+            </div>
+
+            <!-- 全屏图片容器（开始后显示） -->
+            <div id="imageContainer" class="image-container hidden">
+                <!-- 图片将通过JS动态插入 -->
+                <div id="timer" class="timer-display">
+                    <i class="fa fa-clock-o mr-2"></i><span id="countdown">60</span>秒
+                </div>
+                
+                <!-- 结果显示 -->
+                <div id="result" class="result-display">
+                    <p>使用时间: <span id="timeSpent">0</span>秒</p>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 页脚 -->
+        <footer class="bg-white py-4 px-6 text-center text-gray-500 text-sm">
+            <p>© 2025 神奇七巧板 | LL设计</p>
+        </footer>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const controlBtn = document.getElementById('controlBtn');
+        const imageContainer = document.getElementById('imageContainer');
+        const imagesGrid = document.getElementById('imagesGrid');
+        const countdownEl = document.getElementById('countdown');
+        const timerEl = document.getElementById('timer');
+        const resultEl = document.getElementById('result');
+        const timeSpentEl = document.getElementById('timeSpent');
+        
+        // 状态变量
+        let isRunning = false;
+        let countdownInterval;
+        let startTime;
+        let remainingTime = 60;
+        let currentImageIndex = -1;
+        
+        // 生成40张本地图片的路径 (image-001 到 image-040)
+        const generateImagePaths = () => {
+            const paths = [];
+            // 图片文件扩展名，根据实际情况修改
+            const extension = '.jpg';
+            
+            for (let i = 1; i <= 40; i++) {
+                const formattedNumber = i.toString().padStart(3, '0');
+                paths.push(`image-${formattedNumber}${extension}`);
+            }
+            return paths;
+        };
+        
+        const imagePaths = generateImagePaths();
+        
+        // 页面加载时显示所有图片的缩略图网格
+        const renderImagesGrid = () => {
+            imagePaths.forEach((path, index) => {
+                const img = document.createElement('img');
+                img.src = path;
+                img.alt = `图片 ${index + 1}: ${path}`;
+                img.className = 'grid-image';
+                img.dataset.index = index;
+                
+                // 点击缩略图也可以进入全屏模式
+                img.addEventListener('click', () => {
+                    if (!isRunning) {
+                        startSession(index);
+                    }
+                });
+                
+                // 错误处理
+                img.onerror = function() {
+                    this.alt = `图片加载失败: ${path}`;
+                    this.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMjAwIj48cGF0aCBmaWxsPSIjZTBlMGUwIiBkPSJNMjAsMjBoMTYwdjE2MEgyMFYyaC0xNnYtMTRoMTZ2MTR6bTkwLDkwYy0xNi41LDAtMzAsMTMuNS0zMCwzMHMxMy41LDMwLDMwLDMwIDMwLTEzLjUgMzAtMzBTMTA2LjUsMjAsOTAsMjB6bTEwLDkwYy0xMSwwLTIwLTktMjAtMjBzOS0yMCAyMC0yMCAyMCw5IDIwLDIwLTksMjAtMjAsMjB6Ii8+PC9zdmc+';
+                };
+                
+                imagesGrid.appendChild(img);
+            });
+        };
+        
+        // 显示指定索引的图片（全屏）
+        const showImage = (index) => {
+            // 先移除已有的图片
+            const existingImage = imageContainer.querySelector('.fullscreen-image');
+            if (existingImage) {
+                imageContainer.removeChild(existingImage);
+            }
+            
+            currentImageIndex = index;
+            const selectedImage = imagePaths[index];
+            
+            // 创建图片元素
+            const img = document.createElement('img');
+            img.src = selectedImage;
+            img.alt = `展示的图片: ${selectedImage}`;
+            img.className = 'fullscreen-image';
+            
+            // 错误处理
+            img.onerror = function() {
+                this.alt = `图片加载失败: ${selectedImage}`;
+                alert(`无法加载图片: ${selectedImage}\n请检查图片路径和文件名是否正确`);
+            };
+            
+            // 添加到容器并激活动画
+            imageContainer.appendChild(img);
+            setTimeout(() => {
+                img.classList.add('active');
+            }, 100);
+        };
+        
+        // 开始会话
+        const startSession = (index = null) => {
+            isRunning = true;
+            imagesGrid.classList.add('hidden');
+            imageContainer.classList.remove('hidden');
+            resultEl.classList.remove('active');
+            timerEl.classList.remove('bg-red-600/70');
+            timerEl.classList.add('bg-dark/70');
+            
+            // 随机选择一张图片或使用指定索引的图片
+            const imageIndex = index !== null ? index : Math.floor(Math.random() * imagePaths.length);
+            showImage(imageIndex);
+            
+            // 开始倒计时
+            startCountdown();
+            
+            // 改变按钮状态
+            controlBtn.innerHTML = '<i class="fa fa-stop mr-2"></i>结束';
+            controlBtn.classList.remove('bg-primary', 'hover:bg-primary/90');
+            controlBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+        };
+        
+        // 开始倒计时
+        const startCountdown = () => {
+            remainingTime = 60;
+            countdownEl.textContent = remainingTime;
+            startTime = new Date();
+            
+            countdownInterval = setInterval(() => {
+                remainingTime--;
+                countdownEl.textContent = remainingTime;
+                
+                // 改变颜色提示剩余时间
+                if (remainingTime <= 10) {
+                    timerEl.classList.add('bg-red-600/70');
+                    timerEl.classList.remove('bg-dark/70');
+                }
+                
+                if (remainingTime <= 0) {
+                    endSession();
+                }
+            }, 1000);
+        };
+        
+        // 结束当前会话 - 保持图片显示，只停止计时
+        const endSession = () => {
+            clearInterval(countdownInterval);
+            
+            // 计算使用时间
+            const endTime = new Date();
+            const timeSpent = Math.floor((endTime - startTime) / 1000);
+            timeSpentEl.textContent = timeSpent;
+            
+            // 显示结果（左上角，不遮挡图片）
+            resultEl.classList.add('active');
+            
+            // 重置按钮状态
+            controlBtn.innerHTML = '<i class="fa fa-play mr-2"></i>重新开始';
+            controlBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+            controlBtn.classList.add('bg-primary', 'hover:bg-primary/90');
+            
+            isRunning = false;
+        };
+        
+        // 按钮点击事件
+        controlBtn.addEventListener('click', () => {
+            if (!isRunning) {
+                // 开始或重新开始
+                startSession();
+            } else {
+                // 结束 - 保持图片显示
+                endSession();
+            }
+        });
+        
+        // 键盘快捷键：按ESC返回网格视图
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !imagesGrid.classList.contains('hidden')) {
+                return;
+            }
+            
+            if (e.key === 'Escape') {
+                clearInterval(countdownInterval);
+                imageContainer.classList.add('hidden');
+                imagesGrid.classList.remove('hidden');
+                resultEl.classList.remove('active');
+                
+                controlBtn.innerHTML = '<i class="fa fa-play mr-2"></i>开始';
+                controlBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                controlBtn.classList.add('bg-primary', 'hover:bg-primary/90');
+                
+                isRunning = false;
+            }
+        });
+        
+        // 页面加载完成后渲染图片网格
+        window.addEventListener('load', renderImagesGrid);
+    </script>
+</body>
+</html>
